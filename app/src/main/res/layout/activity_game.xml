@@ -6,7 +6,7 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="@drawable/art_background"
-    tools:context="com.gorilla.gorillagrand.FakeView.Game.GameActivity">
+    tools:context=".FakeView.Game.GameActivity">
 
 
     <Button
