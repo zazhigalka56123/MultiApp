@@ -21,6 +21,7 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
 import android.webkit.*
+import com.onesignal.OneSignal
 import com.organizationzaim.multiapp.R
 import java.io.File
 import java.io.IOException
@@ -29,72 +30,54 @@ import java.util.*
 
 
 class WebActivity : Activity() {
+
     private var isConnected = true
     private var webView: WebView? = null
     private var mFilePathCallback: ValueCallback<Array<Uri>>? = null
     private var mCameraPhotoPath: String? = null
     private var URL: String? = null
     private var progressBar: ProgressDialog? = null
+    private var alertDialog: AlertDialog? = null
+
+    private val isNetworkAvailable2: Boolean
+        get() {
+            println("isNetworkAvailable2 called")
+            val info = (applicationContext
+                .getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager)
+                .activeNetworkInfo
+            return !(info == null || !info.isAvailable || !info.isConnected)
+        }
+
+    private val isNetworkAvailable: Boolean
+        get() {
+            val context = applicationContext
+            val connectivity =
+                context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val info = connectivity.allNetworkInfo
+            for (i in info.indices) {
+                if (info[i].state == NetworkInfo.State.CONNECTED) {
+                    return true
+                }
+            }
+            return false
+        }
 
     @SuppressLint("SetJavaScriptEnabled", "HardwareIds")
     override fun onCreate(savedInstanceState: Bundle?) {
-//        AFApplication()
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
+        setContentView(R.layout.activity_web)
 
-        toScroll(false)
-        window.decorView.viewTreeObserver.addOnGlobalLayoutListener {
-            val bit = Rect()
-            window.decorView.getWindowVisibleDisplayFrame(bit)
+        OneSignal.sendTag("nobot", "1")
+        OneSignal.sendTag("bundle", "com.app.bundle")
 
-            val osh = window.decorView.rootView.height
-            val ka = osh - bit.bottom
-            val kart = ka > osh * 0.1399
-            toScroll(kart)
-        }
-
-        webView = findViewById(R.id.webView)
-
-        webView?.scrollBarStyle = WebView.SCROLLBARS_OUTSIDE_OVERLAY
-        URL = getURL()
-        val alertDialog: AlertDialog = AlertDialog.Builder(this).create()
-        ProgressDialog.THEME_DEVICE_DEFAULT_DARK
-
-        progressBar = ProgressDialog.show(this, "Loading", "Loading...")
-
-        if (getURL() == null) {
-            val intent: Intent = intent
-            URL = intent.getStringExtra("banner_url")
-            saveURL(URL)
-        }
-
-
-        val cookieManager = CookieManager.getInstance()
-        cookieManager.setAcceptCookie(true)
-
-        webView?.settings?.javaScriptEnabled = true
-        webView?.settings?.loadWithOverviewMode = true
-        webView?.settings?.useWideViewPort = true
-        webView?.settings?.domStorageEnabled = true
-        webView?.settings?.databaseEnabled = true
-        webView?.settings?.setSupportZoom(false)
-        webView?.settings?.allowFileAccess = true
-        webView?.settings?.allowContentAccess = true
-        webView?.settings?.loadWithOverviewMode = true
-        webView?.settings?.useWideViewPort = true
-
-        webView?.settings?.javaScriptEnabled = true
-        webView?.settings?.allowFileAccess = true
-        webView?.settings?.domStorageEnabled = true
-        webView?.settings?.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-        webView?.settings?.mediaPlaybackRequiresUserGesture = true
-
-        isConnected = isNetworkAvailable
+        initWebView()
 
         webView?.loadUrl(URL!!)
+
         webView?.setNetworkAvailable(isConnected)
 
         webView?.webViewClient = object : WebViewClient() {
+
             override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
                 println("page loading started")
                 if (!isNetworkAvailable2) {
@@ -111,27 +94,22 @@ class WebActivity : Activity() {
                 }
             }
 
-            override fun onReceivedError(
-                view: WebView, errorCode: Int,
-                description: String, failingUrl: String
-            ) {
-                alertDialog.setTitle("Error")
-                alertDialog.setMessage(description)
-                alertDialog.show()
+            override fun onReceivedError(view: WebView, errorCode: Int, description: String, failingUrl: String) {
+                alertDialog?.setTitle("Error")
+                alertDialog?.setMessage(description)
+                alertDialog?.show()
                 if (errorCode == ERROR_TIMEOUT) {
                     view.stopLoading() // may not be needed
                     // view.loadData(timeoutMessageHtml, "text/html", "utf-8");
                 }
             }
 
-            @SuppressLint("HardwareIds")
             override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
                 view.loadUrl(url)
                 return false
             }
 
         }
-
         webView?.webChromeClient = object : WebChromeClient() {
 
             @SuppressLint("SimpleDateFormat")
@@ -211,11 +189,7 @@ class WebActivity : Activity() {
 
     }
 
-    public override fun onActivityResult(
-        requestCode: Int,
-        resultCode: Int,
-        data: Intent?
-    ) {
+    public override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             if (requestCode != INPUT_FILE_REQUEST_CODE || mFilePathCallback == null) {
                 super.onActivityResult(requestCode, resultCode, data)
@@ -250,52 +224,51 @@ class WebActivity : Activity() {
         return false
     }
 
+    private fun initWebView(){
+        toScroll(false)
+
+        val cookieManager = CookieManager.getInstance()
+        cookieManager.setAcceptCookie(true)
+
+        window.decorView.viewTreeObserver.addOnGlobalLayoutListener {
+            val bit = Rect()
+            window.decorView.getWindowVisibleDisplayFrame(bit)
+
+            val osh = window.decorView.rootView.height
+            val ka = osh - bit.bottom
+            val kart = ka > osh * 0.1399
+            toScroll(kart)
+        }
+
+        URL = getURL()
+
+        alertDialog = AlertDialog.Builder(this).create()
+        ProgressDialog.THEME_DEVICE_DEFAULT_DARK
+        progressBar = ProgressDialog.show(this, "Loading", "Loading...")
+
+        webView = findViewById(R.id.webView)
+
+        webView?.scrollBarStyle = WebView.SCROLLBARS_OUTSIDE_OVERLAY
+        webView?.settings?.javaScriptEnabled = true
+        webView?.settings?.loadWithOverviewMode = true
+        webView?.settings?.useWideViewPort = true
+        webView?.settings?.domStorageEnabled = true
+        webView?.settings?.databaseEnabled = true
+        webView?.settings?.setSupportZoom(false)
+        webView?.settings?.allowFileAccess = true
+        webView?.settings?.allowContentAccess = true
+        webView?.settings?.loadWithOverviewMode = true
+        webView?.settings?.useWideViewPort = true
+        webView?.settings?.allowFileAccess = true
+        webView?.settings?.domStorageEnabled = true
+        webView?.settings?.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+        webView?.settings?.mediaPlaybackRequiresUserGesture = true
+    }
 
     private fun showInfoMessageDialog() {
         val intent = Intent(this, NetworkFalseActivity::class.java)
         startActivity(intent)
         finish()
-    }
-
-    private val isNetworkAvailable2: Boolean
-        get() {
-            println("isNetworkAvailable2 called")
-            val info = (applicationContext
-                .getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager)
-                .activeNetworkInfo
-            return !(info == null || !info.isAvailable || !info.isConnected)
-        }
-
-    private val isNetworkAvailable: Boolean
-        get() {
-            val context = applicationContext
-            val connectivity =
-                context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            val info = connectivity.allNetworkInfo
-            for (i in info.indices) {
-                if (info[i].state == NetworkInfo.State.CONNECTED) {
-                    return true
-                }
-            }
-            return false
-        }
-
-    companion object {
-        private const val TAG = "MainActivity"
-        private const val INPUT_FILE_REQUEST_CODE = 1
-    }
-
-
-    private fun saveURL(url: String?) {
-        val sp = getSharedPreferences("SP_WEBVIEW_PREFS", Context.MODE_PRIVATE)
-        val editor = sp.edit()
-        editor.putString("SAVED_URL", url)
-        editor.apply()
-    }
-
-    private fun getURL(): String? {
-        val sp = getSharedPreferences("SP_WEBVIEW_PREFS", Context.MODE_PRIVATE)
-        return sp.getString("SAVED_URL", null)
     }
 
     private fun toScroll(flag: Boolean){
@@ -315,50 +288,23 @@ class WebActivity : Activity() {
                             or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION)
         }
     }
+
+    private fun saveURL(url: String?) {
+        val sp = getSharedPreferences("SP_WEBVIEW_PREFS", Context.MODE_PRIVATE)
+        val editor = sp.edit()
+        editor.putString("SAVED_URL", url)
+        editor.apply()
+    }
+
+    private fun getURL(): String? {
+        val sp = getSharedPreferences("SP_WEBVIEW_PREFS", Context.MODE_PRIVATE)
+        return sp.getString("SAVED_URL", null)
+    }
+
+    companion object {
+        private const val TAG = "MainActivity"
+        private const val INPUT_FILE_REQUEST_CODE = 1
+    }
 }
 
 
-//@/%//**********//***(#***/(/****(#/***************,,,****(/*/*//((/*,(&&&&&&&&@&&&&&&&&@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@%((((((((((##(####(#######((((((((#(#(((######(
-///*,*************####**(((##/********************//*(#((#*////(#/(/(%&&&&&&&&&&&&@&&&&@@&%%&@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@####(((((((((##########((((#((######((######((
-//****/((#%#(##%##/***********(#****************,*//#(((#(/*//(((#%&&&&&&&&&&@@&@%%&&&%%%&&&&&@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@###(##((#((((#######################(########
-//********#********/#******/#//*,**,**(((*/(((///**/#(#(##(#//(##&&@&&&&&&&@@&&%&&&%%%&&&&&&&@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@&######((((((############################(###
-//&%%&&#####(%%%%%%&&%%%##%#/%****,*%/(*######(**(#(#((#####((##(&&@&@@@&&@%#%&%#%%&&&@&&%&&@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@&&@@@@@@@@@@@@@@@@&#####(((((#################################
-//******/***#/***//(#%%%&&&&%(*****/(*/(#(###((#/###########(####@&@@@@&%%%%#%%%%%%%&&&&&&&&@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@&&&&&&&@@@@@@@@@@@@@@@&##(######(############(###################
-///(#%#(%%#(/**/##******,#,**(********/#/#(#######(%#########(###@@&%#####%%%%&&&&&&&@@&&&@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@&&@@&&@@&&&&&&&&&&@@@@@@@@@@@@@%%##########################################
-///#/**********##/**,****#*/%((/*/(/(#/((######(#################%#%#%%%&&&&@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@&@&@@@&&&&&&&&&&&%&&@@@@@@@@@@&%#(#((#######################################
-//****(&%((/******/**,*/#*/#(#/(%#(*//#%###############((#####%%%%%%&%%%%%%&&&%&@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@&&@@@@@@@@@@@&&&&&&&&&&&&&%%%%&&@@@@@@@&######(########################%%#############
-//*****//((/***(/*(/////(#%#%%&%(((((####(###############%%%%#%%%%%%&&&&&&&&&&&&@@@@@@@@@@@@@@@@@@@@@@@@@@@@@&&@@@@&&&@@@@@@@@@&&&&&&&&&&&&&&%%%%%%&@@@@@@%####(##########################################
-//******(//((((/*/*/**///*/(%######%%############%%%%%%##%%%%&&&&&&&&&&&&&&&&@@@@@@@@@@@@@@@@@@@&&&&&&&&&@@@@@@@@@@@@@@@@@@@@@@&&&&&&&&&&&&&&%%%%%%%&@@@@%&&%%############################################
-//******/(#(//(#(**/(///((*(/(#%%######(##%%%%%%%%%%%%%%&&&&&&&&&@@@@@&&@@@@@@@@@@@@@@@&##%%%%%&%&&&&&&&@@@@@@@@@@@@@@@@@@@@@@@&&&&&&&&&&&&&&&&&&&&&&@@@&&&&&&%#####################(######(##############
-//*//*//(/(//(((*//((/((/((#(##(#%%###%%%%%%%%%%%&&&&&&&&&&&&&@@@@@@@@&&&@@@@@@@@@@#(###%%&&&&&&&&&@@@@@@@@@@@@@@@@@@@@@@@@@@@@&&&&@@@@@@@@&&&&&&&&%&@@&&&@&&&%%%%##############((##(#####################
-//*/(/((//(/(#(/((((/#((((#((((######%%%%%%%&&&&&&&&&&&&&&@@@@@@@&&&&&&&&&%%%%%%&&%#(##%%&@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@&&&&&&&@&&&&&&&%####%#########((#########((################
-//(*(#((/(((((((((((((((##(#######%%%%&&&&&&&&&&&&&@@@@@@@@@&&&&&@@@@@@&@%%%&&#%&&%((###%@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@&&&&%%&@&@@@&&&%##############(((##(###((##################
-//((((((((/((/#*((((###(#####%%%%%%&&&&&&&&&&&&@@@@@@@@@@&&&&&&&@@@@@@@&%%%&%%%%&&#((((#%@@@@@@@@@@@@@@@@@@@@@@@&%%%&&&&&&&&@@@@@@@@@@@@@@&&&&&&&%%%%&&&@&&&&&####%###########((##########################
-//((*/(((((#(((((((#######%%%%%&&&&&&&&&&&&&@@@@@@@@@@@&&&&&@@@@@@@@@&%####%&%&%&&(((((#%@@@@@@@@@@@@@@@@@@@@@@&%#%%&&&&&&&&&&&@@@@@@@@@@&&&&&&&%%%&&&@@&&&&&%###%#################(######################
-//#((((((/(#(#((#####%%%%%%&&&&&&&&&&&@@@@@@@@@@@@@@@&&&@@@@@@@@@@%#######%#%%%&%&#(((###%@@@@@@@@@@@@@@@@@@@@&%###%&&&&&&&&&&&&&&@@@&&&&&&&&&&&&&&&&@@@&&&&%%#%%#########################################
-//##(((((((###%%%%%%%&&&&&&&&&&&&@@@@@@@@@@@@@@@@@@@@@@@@@@@&%###########%%##%%&%######%&@@@@@@@@@@@@@@@@&&%#####%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&@&&&&&&##############################################
-//&#(#########%%%%%%&&&&&&&&&&&@@@@@@@@@@@@@@@@@@&@@@@@@@&@%#########(#(#(%%%%###&&#####&@&&@@@@@@@@@@&&&&&&%%###(#%&&&&%%&&&&&&&&&&&&&&&&&&&&&&&&&&&@&&&&&%##############################################
-//%#######%%%%%&&&&&&&&&&&&@@@@@@@@@@@@@@@@@@@@@@&@@@@@&#################%&%#####&&%#%&&%%%%%&&&&&&&&&&&&&%%%%##((#%&&&&%%%&&&&&&&&&&&&&&&&&&&&&&&&&&@&&&&&%############################################((
-//###%%%%%%&&&&&&&&&&&&@@@@@@@@@@@@@@@@@@@@@@@@@&&&@@&################%&&%&&&&%%%&&&&%%##%%%%&&&%%&&&&&&&&&&%#(((##%&&&&%%%%&&&&&&&&&&&&&&&&&&&&&&&&@@@@@&&&&%##########################((((((############
-//%%%%&&&&&&&&&&&@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@&@@&(############%#%%%%&&&&%&&&&&@@&%#####%%%%%%%%&&&&&&&&&&&#####%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&@@@@@@@&&&&%%##(((((##########################(((#####
-//&&&&&&&&&&&@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@&&@@&#(##############%&&&&&&&&&&&&&&&&&%%%###%%%%%%%%&&&&&&&&&&&&@@&%&&@@@@&&@@@@@&@@&&&&&&&&&&&&&&&&&&@@@@@@@@@&%%%%%%######################################
-//&&&&&&&&@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@%#####(##############%&&&&&&&&&&&&&&&%%%%##%%##%%%%&&&&&&&&&&&&&@@@@@@@@@@@@@&&&&&&&@&&&&&&&&&&&&&&@@@@@@@@@@&&&%%############################((((((#######
-//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@&##%#################%%&&&&&%&&&&&&&&&&&&&&&%%%%%#%%%&&&&&&&&&&&&&&@@@@@@@@@@@@@@@@&&&&&@@&&&&&&&&&&@@@@@@@@&@&&&@&&%#############################(((((#######
-//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@&##(#####################%%%#%%&&&&&&&&&&@&&&&&%%%%%%%%%&&&@@&&&&&&&@@@@@@@@@@@@@@@@@@@@@@@@@@&&&&&&&@@@@@&&&@@@@&&&&%%%%%############################((((((###(#
-//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@&&@@@@@&%###%###########################%&&&&&&&@&&&@@&&&&&&%%%%%&&@@@&&&&&&&&&@@@@@@@@@@@@@@@@@@@@@@@@@@&&&&&@@@@@@@@@&@&@@&&&&%###############################((((#######
-//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@&#(##((##############################%&&&&&&&&&&@&%%&&&&&%%%%&&&@&&&&&&@&&&&&&&&&&@&&&&&&&@@@@@@@@@@@@&&&@@@@@@@@@@@@@&&@@&#%%%###############################((((#####
-//@@@@@@@@@@@@@@@@@@@@@@@@&@@@&%######################################%&%&&&@&@&@@&&&&##&&&&&&&&&&&&&&&&&&&&&&&&@@@@@@@@@@@@@&&&&&&&@@@@@&&@@@@@@@@@&&@@@@@&%&&&#################################(((#(####
-//@@@@@@@@@@@@@@@@@@@@@@@@&#####(####################################%%%&&&&%@&&&&&@@&##%%&&&&&&&&&&&&&&&&&&&@@@@@@@@@@@@@@@@@@&&&&@@@@@@@@@@@&@@@@&@@&&@@@@@&%%%%#################################((((###
-//@@@@@@@@@@@@@@@@@@@@@########(#####################################%&&&&%&&&&&@@@@@%%##%%&&&&&&&&&&&&&&&&&@@@@@@@@@@@@@@@@@@@&&&&@@@@@@@@@@&&&@@&&@&&@%%&@&&@&%%################################((((((##
-//@@@@@@@@@@@@@@@@@@%((############################################%%#%%%%&%%&@@@@@@&%%%&%#%%&&&&&&&&&&&&&&&&&&&@@@@@@@@@@&&&&&&&&@@@@@@@@@&&&&&@@@@@%%%&&%%&&%%#%%##############################((#((((((
-//@@@@@@@@@@@@@@@@#(####################################################%%%&@@@@@@@@%%%%%&&%%%%@&&@&&&&&&&&&&&&@@@@@@@@@@@@@@&&&&&@@@@@@@&&&&&&&&@@@@@@%%%&%%%#%###%%%%%%####%%####%%%%%%####(##%%%%####((
-//@@@@@@@@@@@@@#(########################%%%%%%##%%%###%#%%#####%%#(###%&@@@@@@@@@@@%%%%%%%&&&%%&&&@@@&&&&&&&@@@@@@@@@@@@@@@@@@@@@@@@@@&&&&&&&&&&@@@@@@@@@%%%%%%%%%%#%%%%%%%%%%%%%%%%%%%#%%#((#%%%%%%%%#%#
-//@@@@@@@@&##############################%%%%%%###%%###%#%%##(#%%%&&&&&&@@@@@@@@@@@&%%%%%%%%&&&&&%%&@@@&&@@@@@@@@@@@@@@@@@@@@@@@@@@@@&&&&&&&&&&&&@@@@@@@@@@@&%%%%%%%#%%%%%%%%%%%%%%%%%%%%#%####%%%%###%#%%
-//&&&&&&&&&&&&&%&&&&%%%%%%%%%%%%%%%&%%%%&&&&&&&&&&&&&%%%%%&&%&&&&&&&&&&&&&@@@@@&&&&&&&%&&&&%%%%&%&&&%%%%%%%%%&&&&&&&&&&&&@@@@&@&@@%%&%%%&&&&&&&&&@@@@@@@@@@@@@&&&&@&&&&&&@@@@&&&&@@&&&&&@@&@&&&&&&&&&&&&&&
-//%%%%/.,*,,*(%&&&&&&%%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&%%%%(//////#%&%&&&&&&@#&@@&&&&@&%%&@&&&%%#,,***,*#&%%&&&&&&&&&&&&&&@@@@@&(,,,*,,/#%%&&&&&@@@@&&@@@@@@&@@&@@@@@@@&@@@@@@@@@@@@@@@@@&@@&#&@@&&@@@@&@&@@
-//%%&%/*%&&&#,#&(//*(&%(****/%&%(****/#&&(*/**/#&&&&&%%%%/(%%%%%&&&&&&&&&(*.,/(&&#/****/%@&%%%#,(%%%%,/&#(**/*(%%//&&&&#/%@@@&/,&@&&#,(&%(*****(%%#/****(%&#//****/%&%#/****/#&%#/,***/%%/* ,*/&%/****/#&%
-//&%&&/*#%%#/*%&*,&&&%,*%%#%**%(,#&&%#/%(,#&&&(/&&&&&%%%%/*(///#%&&&&&&&&@&,(@&&#,(&&%%,/@&%%%#,(#%#(,(&(/%&%#,/&%,*%&(,(@@@@@/,%%&%*,%@%,#&&%#,/&/,%@@&(#@#,#@@@%,/@%,/%%&%*,&&*/@@@&(/&@%.#@&&/*%@@&((&&
-//&%&&/*%&&%&&&&**%&%%,*&&%%%%&&&%#(/,/%&%%#(*,/&&&%&%%&%/(%&&&&&&&&&&&&&@@,(@&&#,(@&%%*/@&%%&#,(%%%%&&%(,*#%#,/%&%,/(,(@&@@@&/,&&#,/&@@#,#&&&&%&@&&%#(,,#@#,#@@@&**@%*/&&@&&%@&*/@&&@&&@@%,(@@&@&%#(/,#&&
-//&&&&/*%&%&%&&&**%&&&/,////,/&#,**//,*&#,*//*,*&&&%%%%%&((%&%&&&&&&&&&&@@&*,/(%#**///*.(@&%%&#*#&%%&%&&/,*//*.(&%&#,.(@&&@@@@/,%&&&(,#@%,,(((*,#@/,//(/,(@#.*//(*.(@&/,/(//,/@&/,////./&&#/,*%*(//##*/%&@
-//&&&&&%&&&&&&&&&&&&&&%&&&&&&@&%&&&&&&&&&&&&&&&@&&&%%%%&&&&&&&&&&&&&&&&&@@@@&@&&&&&@&&&@@&&%%%&&&%%&&%&%%&&&&&&&%&&#*(@&&@@@@@&@@@@&@@@&@&@@@@@@@&@@@@&@@&@#,%@@@@@@@@@@@@@@@@&@@@@@@@@@@&@@@@@&@@@@@@&@@@
-//
