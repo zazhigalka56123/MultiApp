@@ -7,6 +7,7 @@ import android.app.AlertDialog
 import android.app.ProgressDialog
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.net.ConnectivityManager
@@ -21,8 +22,17 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
 import android.webkit.*
+import bolts.AppLinks
+import com.facebook.FacebookSdk
+import com.facebook.applinks.AppLinkData
 import com.onesignal.OneSignal
+import com.organizationzaim.multiapp.BuildConfig
+import com.organizationzaim.multiapp.FakeView.Game.GameActivity
 import com.organizationzaim.multiapp.R
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
 import java.text.SimpleDateFormat
@@ -48,29 +58,18 @@ class WebActivity : Activity() {
             return !(info == null || !info.isAvailable || !info.isConnected)
         }
 
-    private val isNetworkAvailable: Boolean
-        get() {
-            val context = applicationContext
-            val connectivity =
-                context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            val info = connectivity.allNetworkInfo
-            for (i in info.indices) {
-                if (info[i].state == NetworkInfo.State.CONNECTED) {
-                    return true
-                }
-            }
-            return false
-        }
 
     @SuppressLint("SetJavaScriptEnabled", "HardwareIds")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_web)
 
-        OneSignal.sendTag("nobot", "1")
-        OneSignal.sendTag("bundle", "com.app.bundle")
-
         initWebView()
+
+        val intent: Intent = intent
+        URL = intent.getStringExtra("URL")
+
+
 
         webView?.loadUrl(URL!!)
 
@@ -105,6 +104,7 @@ class WebActivity : Activity() {
             }
 
             override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
+                CookieSyncManager.getInstance().sync()
                 view.loadUrl(url)
                 return false
             }
@@ -224,6 +224,7 @@ class WebActivity : Activity() {
         return false
     }
 
+    @SuppressLint("SetJavaScriptEnabled")
     private fun initWebView(){
         toScroll(false)
 
@@ -240,7 +241,6 @@ class WebActivity : Activity() {
             toScroll(kart)
         }
 
-        URL = getURL()
 
         alertDialog = AlertDialog.Builder(this).create()
         ProgressDialog.THEME_DEVICE_DEFAULT_DARK
@@ -289,17 +289,17 @@ class WebActivity : Activity() {
         }
     }
 
-    private fun saveURL(url: String?) {
-        val sp = getSharedPreferences("SP_WEBVIEW_PREFS", Context.MODE_PRIVATE)
-        val editor = sp.edit()
-        editor.putString("SAVED_URL", url)
-        editor.apply()
-    }
-
-    private fun getURL(): String? {
-        val sp = getSharedPreferences("SP_WEBVIEW_PREFS", Context.MODE_PRIVATE)
-        return sp.getString("SAVED_URL", null)
-    }
+//    private fun saveURL(url: String?) {
+//        val sp = getSharedPreferences("SP_WEBVIEW_PREFS", Context.MODE_PRIVATE)
+//        val editor = sp.edit()
+//        editor.putString("SAVED_URL", url)
+//        editor.apply()
+//    }
+//
+//    private fun getURL(): String? {
+//        val sp = getSharedPreferences("SP_WEBVIEW_PREFS", Context.MODE_PRIVATE)
+//        return sp.getString("SAVED_URL", null)
+//    }
 
     companion object {
         private const val TAG = "MainActivity"
