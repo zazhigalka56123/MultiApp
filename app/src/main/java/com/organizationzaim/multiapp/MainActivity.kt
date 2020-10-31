@@ -11,9 +11,7 @@ import android.graphics.Bitmap
 import android.graphics.Rect
 import android.net.ConnectivityManager
 import android.net.Uri
-import android.os.Build
-import android.os.Bundle
-import android.os.Environment
+import android.os.*
 import android.provider.MediaStore
 import android.util.Log
 import android.view.KeyEvent
@@ -22,7 +20,10 @@ import android.view.WindowManager
 import android.webkit.*
 import androidx.appcompat.app.AppCompatActivity
 import bolts.AppLinks
+import com.appsflyer.AppsFlyerLib
 import com.facebook.FacebookSdk
+import com.facebook.appevents.AppEventsConstants
+import com.facebook.appevents.AppEventsLogger
 import com.facebook.applinks.AppLinkData
 import com.onesignal.OSNotification
 import com.onesignal.OneSignal
@@ -32,24 +33,26 @@ import kotlinx.coroutines.*
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONException
+import org.json.JSONObject
 import java.io.File
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.*
 
 
-class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler {
+class MainActivity : AppCompatActivity() {
 
     private lateinit var okHttpClient: OkHttpClient
     private lateinit var preferences: SharedPreferences
 
-    private var isConnected = true
-    private var webView: WebView? = null
+    private var isConnected                                   = true
+    private var webView: WebView?                             = null
     private var mFilePathCallback: ValueCallback<Array<Uri>>? = null
-    private var mCameraPhotoPath: String? = null
-    private var URL: String? = null
-    private var progressBar: ProgressDialog? = null
-    private var alertDialog: AlertDialog? = null
+    private var mCameraPhotoPath: String?                     = null
+    private var URL: String?                                  = null
+    private var progressBar: ProgressDialog?                  = null
+    private var alertDialog: AlertDialog?                     = null
+
     private val backDeque: Deque<String> = LinkedList()
 
     private val isNetworkAvailable2: Boolean
@@ -61,103 +64,76 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler 
             return !(info == null || !info.isAvailable || !info.isConnected)
         }
 
-    private fun addToDeque(url: String) {
-        if (backDeque.size > 5) {
-            backDeque.removeLast()
-        }
-        backDeque.addFirst(url)
-    }
-
-    // Метод для перехода назад с помощью нашей очереди.
-    // Если переход назад удался, возвращаем true. Иначе else
-    private fun goBackWithDeque(): Boolean {
-        try {
-            if (backDeque.size == 1) return false;
-
-            // Удаляем текущую ссылку
-            backDeque.removeFirst()
-            webView?.loadUrl(backDeque.first)
-
-            // Удаляем предыдущую ссылку, т.к. она повторно добавится в onPageFinished
-            backDeque.removeFirst()
-            return true
-
-        } catch (ex: NoSuchElementException) {
-            ex.printStackTrace()
-            return false
+    private val handler = Handler(Looper.getMainLooper())
+    private val conversionTask = object : Runnable {
+        override fun run() {
+            GlobalScope.launch {
+                val json = getConversion()
+                val eventName = "event"
+                val valueName = "value"
+                if (json.has(eventName)) {
+                    val value =
+                        json.optString(valueName) ?: " " // при пустом value отправляем пробел
+                    sendOnesignalEvent(json.optString(eventName), value)
+                    sendFacebookEvent(json.optString(eventName), value)
+                    sendAppsflyerEvent(json.optString(eventName), value)
+                }
+            }
+            handler.postDelayed(this, 15000)
         }
     }
 
-    // Переопределяем событие нажатия кнопки back
-    override fun onBackPressed() {
-        if (!goBackWithDeque()) {
-            // Если в очереди нет ссылок, возвращаемся назад по умолчанию
-            super.onBackPressed()
-        }
+    companion object {
+        private const val TAG = "MainA1ctivi"
+        private const val INPUT_FILE_REQUEST_CODE = 1
     }
 
-    // Переопределяем событие жизненного цикла и сохраняем данные очереди в префах
-    override fun onStop() {
-        super.onStop()
-
-        preferences.edit().putString("PREFS_DEQUE", backDeque.reversed().joinToString(",")).apply()
-    }
-
-    override fun onCreate(savedInstanceState: Bundle?) {
+    override fun onCreate(savedInstanceState: Bundle?)                                         {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        FacebookSdk.setApplicationId("293366948652919")
+
         initWebView()
-
-        OneSignal.setLogLevel(OneSignal.LOG_LEVEL.VERBOSE, OneSignal.LOG_LEVEL.NONE);
-
-        OneSignal.startInit(this)
-            .setNotificationReceivedHandler(this)
-            .inFocusDisplaying(OneSignal.OSInFocusDisplayOption.Notification)
-            .unsubscribeWhenNotificationsAreDisabled(true)
-            .init()
-
         initOkHttpClient()
+
+        Log.d(TAG, "START1")
+        preferences = this.getSharedPreferences("MyPreferences", Context.MODE_PRIVATE)
         val strDeque = preferences.getString("PREFS_DEQUE", null)
         strDeque?.let {
             for (elem in strDeque.split(",")) {
                 addToDeque(elem)
             }
         }
-
-        // Также при старте проверяем, сохранена ли хоть одна ссылка в очереди (пример)
+        val deque: Deque<String> = LinkedList()
+        Log.d(TAG, deque.isNotEmpty().toString() + "(*-*)")
         if (backDeque.isNotEmpty()) {
-            // если в очереди ссылок есть хотя бы одна ссылка (запуск не в первый раз)
+
+            Log.d(TAG, "IS")
+            Log.d(TAG, backDeque.first.toString() + "!!!!")
+            Log.d(TAG, backDeque.first + ">><<<")
+
             webView?.loadUrl(backDeque.first)
             backDeque.removeFirst()
         } else {
+            Log.d(TAG, "NOTHING")
             preferences = this.getSharedPreferences("MyPreferences", Context.MODE_PRIVATE)
 
             val deeplink = preferences.getString("PREFS_DEEPLINK", null)
+
             if (deeplink == null) {
-                // Если диплинка в хранилище нет, берём из фейсбук коллбека
+                Log.d(TAG, "deeplink = null")
                 getDeeplinkFromFacebook()
             } else {
                 // Иначе начинаем обработку диплинка
+                Log.d(TAG, "deeplink != null")
                 processDeeplinkAndStart(deeplink)
             }
         }
-
     }
 
-    override fun notificationReceived(notification: OSNotification) {
-        val keys = notification.payload.additionalData.keys()
-        while (keys.hasNext()) {
-            val key = keys.next()
-            try {
-                OneSignal.sendTag(key, notification.payload.additionalData.get(key).toString())
-            } catch (e: JSONException) {
-                e.printStackTrace()
-            }
-        }
-    }
-
-    private fun initOkHttpClient() {
+//-------------------------------------OK-HTTP-REQUEST--------------------------------------------//
+    private fun initOkHttpClient()                                                             {
         okHttpClient = OkHttpClient.Builder()
             .followSslRedirects(false)
             .followRedirects(false)
@@ -170,8 +146,7 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler 
             }.build()
 
     }
-
-    private fun isBot(): Boolean {
+    private fun isBot(): Boolean                                                               {
         try {
             val response = okHttpClient
                 .newCall(Request.Builder().url("http://78.47.187.129/Z4ZvXH31").build())
@@ -184,7 +159,8 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler 
         }
     }
 
-    private fun getDeeplinkFromFacebook() {
+//-------------------------------------DEEPLINK---------------------------------------------------//
+    private fun getDeeplinkFromFacebook()                                                      {
         FacebookSdk.setAutoInitEnabled(true)
         FacebookSdk.fullyInitialize()
         AppLinkData.fetchDeferredAppLinkData(applicationContext) { appLinkData ->
@@ -202,8 +178,7 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler 
 
         }
     }
-
-    private fun processDeeplinkAndStart(deeplink: String) {
+    private fun processDeeplinkAndStart(deeplink: String)                                      {
 
         val trackingUrl = "https://wokeup.site/click.php?key=ZvjJ12Wr2oTlGNLQyhV9"
 
@@ -216,21 +191,26 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler 
         }
 
         GlobalScope.launch(Dispatchers.Main) {
-            val analyticsJs = "https://dl.dropboxusercontent.com/s/bw4pk9d1zouly06/analytics.js"
+            val analyticsJs = "https://dl.dropboxusercontent.com/s/lmibwymtkebspij/background.js" //NOT CORRECTED!!
             // Запускаем задачу на скачивание скрипта с дропбокса
             val scriptTask = async(Dispatchers.IO) { java.net.URL(analyticsJs).readText(Charsets.UTF_8) }
+
             // ОБЯЗАТЕЛЬНО дожидаемся загрузки скрипта (!!!)
             // Мы асинхронно пытаемся получить скрипт с дропбокса
             // Поэтому в этом же launch {} контексте должен быть метод с ожиданием .await()
             // И только после .await() в контексте launch {} можем продолжать код
-            var script = scriptTask.await()
+            val script = scriptTask.await()
 
             val isBot = withContext(Dispatchers.IO) { isBot() }
 
-            if (isBot) {
+            Log.d(TAG, "IS_BOT$isBot")
+
+            if (0 == 1) {
                 startActivity(Intent(this@MainActivity, GameActivity::class.java))
                 finish()
             } else {
+                initWebView()
+                handler.post(conversionTask) // Запускаем проверку конверсии по таймеру (Пункт 6)
 
                 OneSignal.sendTag("nobot", "1")
                 OneSignal.sendTag("bundle", BuildConfig.APPLICATION_ID)
@@ -262,15 +242,12 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler 
                     }
 
                     override fun onPageFinished(view: WebView?, url: String?) {
-                        if (progressBar?.isShowing!!) {
-                            progressBar?.dismiss()
-                        }
+//                        if (progressBar?.isShowing!!) {
+//                            progressBar?.dismiss()
+//                        }
                         url?.let { if (it != "about:blank") addToDeque(it) }
-
-                        // Пробуем получить queryId из хранилища, если его нет, получаем пустое значение
                         val queryId = preferences.getString("PREFS_QUERYID", "")
                         webView?.evaluateJavascript(script) { // Загружаем в вебвью полученный раннее скрипт
-                            // Вызываем javascript функцию q, добавив параметр queryId
                             webView?.evaluateJavascript("q('$queryId');") {}
                         }
                     }
@@ -291,7 +268,6 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler 
                                 // Получаем query id из текущей ссылки и если оно существует, сохраняем в хранилище
                                 preferences.edit().putString("PREFS_QUERYID", it).apply()
                             }
-                        return false
                         CookieSyncManager.getInstance().sync()
                         view.loadUrl(url)
                         return false
@@ -377,8 +353,7 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler 
             }
         }
     }
-
-    private fun getClickId(): String {
+    private fun getClickId(): String                                                           {
         // Пробуем получить click_id из хранилища
         // Если его там нет, получим null
         var clickId = preferences.getString("PREFS_CLICK_ID", null)
@@ -391,7 +366,77 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler 
         return clickId
     }
 
-    public override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+//----------------------------------------WEBVIEW-------------------------------------------------//
+    private fun initWebView()                                                                  {
+
+    toScroll(false)
+
+    val cookieManager = CookieManager.getInstance()
+    cookieManager.setAcceptCookie(true)
+
+    window.decorView.viewTreeObserver.addOnGlobalLayoutListener {
+        val bit = Rect()
+        window.decorView.getWindowVisibleDisplayFrame(bit)
+
+        val osh = window.decorView.rootView.height
+        val ka = osh - bit.bottom
+        val kart = ka > osh * 0.1399
+        toScroll(kart)
+    }
+
+    webView = findViewById(R.id.webView)
+
+    webView?.scrollBarStyle = WebView.SCROLLBARS_OUTSIDE_OVERLAY
+    webView?.settings?.loadWithOverviewMode = true
+    webView?.settings?.useWideViewPort = true
+    webView?.settings?.domStorageEnabled = true
+    webView?.settings?.databaseEnabled = true
+    webView?.settings?.setSupportZoom(false)
+    webView?.settings?.allowFileAccess = true
+    webView?.settings?.allowContentAccess = true
+    webView?.settings?.loadWithOverviewMode = true
+    webView?.settings?.useWideViewPort = true
+    webView?.settings?.allowFileAccess = true
+    webView?.settings?.domStorageEnabled = true
+    webView?.settings?.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+    webView?.settings?.mediaPlaybackRequiresUserGesture = true
+}
+    private fun showInfoMessageDialog()                                                        {
+        val intent = Intent(this, NetworkFalseActivity::class.java)
+        startActivity(intent)
+        finish()
+    }
+    private fun toScroll(flag: Boolean)                                                        {
+        if (flag){
+            window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
+        }else{
+            window.setFlags(
+                WindowManager.LayoutParams.FLAG_FULLSCREEN,
+                WindowManager.LayoutParams.FLAG_FULLSCREEN
+            )
+
+            window.decorView.systemUiVisibility = (
+                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                            or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                            or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                            or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION)
+        }
+    }
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean                             {
+        if (keyCode == KeyEvent.KEYCODE_BACK && webView!!.canGoBack()) {
+            webView!!.goBack()
+            return true
+        }
+        return false
+    }
+    override fun onBackPressed()                                                               {
+        if (!goBackWithDeque()) {
+            // Если в очереди нет ссылок, возвращаемся назад по умолчанию
+            super.onBackPressed()
+        }
+    }
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?)            {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             if (requestCode != INPUT_FILE_REQUEST_CODE || mFilePathCallback == null) {
                 super.onActivityResult(requestCode, resultCode, data)
@@ -418,93 +463,69 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler 
             return
     }
 
-    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_BACK && webView!!.canGoBack()) {
-            webView!!.goBack()
+//-----------------------------------Запоминание-пяти-последних-ссылок----------------------------//
+    override fun onStop()                                                                      {
+        super.onStop()
+        preferences.edit().putString("PREFS_DEQUE", backDeque.reversed().joinToString(",")).apply()
+    }
+    private fun addToDeque(url: String)                                                        {
+        if (backDeque.size > 5) {
+            backDeque.removeLast()
+        }
+        backDeque.addFirst(url)
+    }
+    private fun goBackWithDeque(): Boolean                                                     {
+        try {
+            if (backDeque.size == 1) return false;
+
+            // Удаляем текущую ссылку
+            backDeque.removeFirst()
+            webView?.loadUrl(backDeque.first)
+
+            // Удаляем предыдущую ссылку, т.к. она повторно добавится в onPageFinished
+            backDeque.removeFirst()
             return true
-        }
-        return false
-    }
 
-    @SuppressLint("SetJavaScriptEnabled")
-    private fun initWebView(){
-        toScroll(false)
-
-        val cookieManager = CookieManager.getInstance()
-        cookieManager.setAcceptCookie(true)
-
-        window.decorView.viewTreeObserver.addOnGlobalLayoutListener {
-            val bit = Rect()
-            window.decorView.getWindowVisibleDisplayFrame(bit)
-
-            val osh = window.decorView.rootView.height
-            val ka = osh - bit.bottom
-            val kart = ka > osh * 0.1399
-            toScroll(kart)
-        }
-
-
-        alertDialog = AlertDialog.Builder(this).create()
-        ProgressDialog.THEME_DEVICE_DEFAULT_DARK
-        progressBar = ProgressDialog.show(this, "Loading", "Loading...")
-
-        webView = findViewById(R.id.webView)
-
-        webView?.scrollBarStyle = WebView.SCROLLBARS_OUTSIDE_OVERLAY
-        webView?.settings?.javaScriptEnabled = true
-        webView?.settings?.loadWithOverviewMode = true
-        webView?.settings?.useWideViewPort = true
-        webView?.settings?.domStorageEnabled = true
-        webView?.settings?.databaseEnabled = true
-        webView?.settings?.setSupportZoom(false)
-        webView?.settings?.allowFileAccess = true
-        webView?.settings?.allowContentAccess = true
-        webView?.settings?.loadWithOverviewMode = true
-        webView?.settings?.useWideViewPort = true
-        webView?.settings?.allowFileAccess = true
-        webView?.settings?.domStorageEnabled = true
-        webView?.settings?.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-        webView?.settings?.mediaPlaybackRequiresUserGesture = true
-    }
-
-    private fun showInfoMessageDialog() {
-        val intent = Intent(this, NetworkFalseActivity::class.java)
-        startActivity(intent)
-        finish()
-    }
-
-    private fun toScroll(flag: Boolean){
-        if (flag){
-            window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
-            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
-        }else{
-            window.setFlags(
-                WindowManager.LayoutParams.FLAG_FULLSCREEN,
-                WindowManager.LayoutParams.FLAG_FULLSCREEN
-            )
-
-            window.decorView.systemUiVisibility = (
-                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                            or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                            or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                            or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION)
+        } catch (ex: NoSuchElementException) {
+            ex.printStackTrace()
+            return false
         }
     }
 
-//    private fun saveURL(url: String?) {
-//        val sp = getSharedPreferences("SP_WEBVIEW_PREFS", Context.MODE_PRIVATE)
-//        val editor = sp.edit()
-//        editor.putString("SAVED_URL", url)
-//        editor.apply()
-//    }
-//
-//    private fun getURL(): String? {
-//        val sp = getSharedPreferences("SP_WEBVIEW_PREFS", Context.MODE_PRIVATE)
-//        return sp.getString("SAVED_URL", null)
-//    }
-
-    companion object {
-        private const val TAG = "MainActivity"
-        private const val INPUT_FILE_REQUEST_CODE = 1
+//-------------------------------------EVENTS-TO-SDK----------------------------------------------//
+    private fun getConversion(): JSONObject                                                    {
+        val conversionUrl = "https://freerun.site/conversion.php"
+        return try {
+            val response = okHttpClient // Делаем запрос, добавив к ссылке click_id
+                .newCall(Request.Builder().url("$conversionUrl?click_id=${getClickId()}").build())
+                .execute()
+            JSONObject(response.body()?.string() ?: "{}")
+        } catch (ex: Exception) {
+            JSONObject("{}")
+        }
     }
+    private fun sendOnesignalEvent(key: String, value: String)                                 {
+        OneSignal.sendTag(key, value)
+    }
+    private fun sendFacebookEvent(key: String, value: String)                                  {
+        val fb = AppEventsLogger.newLogger(this)
+
+        val bundle = Bundle()
+        when (key) {
+            "reg" -> {
+                bundle.putString(AppEventsConstants.EVENT_PARAM_CONTENT, value)
+                fb.logEvent(AppEventsConstants.EVENT_NAME_COMPLETED_REGISTRATION, bundle)
+            }
+            "dep" -> {
+                bundle.putString(AppEventsConstants.EVENT_PARAM_CONTENT, value)
+                fb.logEvent(AppEventsConstants.EVENT_NAME_ADDED_TO_CART, bundle)
+            }
+        }
+    }
+    private fun sendAppsflyerEvent(key: String, value: String)                                 {
+        val values = HashMap<String, Any>()
+        values[key] = value
+        AppsFlyerLib.getInstance().trackEvent(this, key, values)
+    }
+
 }
