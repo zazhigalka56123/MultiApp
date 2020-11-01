@@ -20,7 +20,9 @@ import android.view.WindowManager
 import android.webkit.*
 import androidx.appcompat.app.AppCompatActivity
 import bolts.AppLinks
+import com.appsflyer.AppsFlyerConversionListener
 import com.appsflyer.AppsFlyerLib
+import com.appsflyer.AppsFlyerLibCore
 import com.facebook.FacebookSdk
 import com.facebook.appevents.AppEventsConstants
 import com.facebook.appevents.AppEventsLogger
@@ -40,7 +42,7 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler {
 
     private lateinit var okHttpClient: OkHttpClient
     private lateinit var preferences: SharedPreferences
@@ -52,8 +54,8 @@ class MainActivity : AppCompatActivity() {
     private var URL: String?                                  = null
     private var progressBar: ProgressDialog?                  = null
     private var alertDialog: AlertDialog?                     = null
-
     private val backDeque: Deque<String> = LinkedList()
+    private lateinit var script : String
 
     private val isNetworkAvailable2: Boolean
         get() {
@@ -96,6 +98,7 @@ class MainActivity : AppCompatActivity() {
 
         initWebView()
         initOkHttpClient()
+        initSDK()
 
         Log.d(TAG, "START1")
         preferences = this.getSharedPreferences("MyPreferences", Context.MODE_PRIVATE)
@@ -131,6 +134,8 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
+
 
 //-------------------------------------OK-HTTP-REQUEST--------------------------------------------//
     private fun initOkHttpClient()                                                             {
@@ -191,15 +196,17 @@ class MainActivity : AppCompatActivity() {
         }
 
         GlobalScope.launch(Dispatchers.Main) {
+            Log.d(TAG, "TTTTTT")
             val analyticsJs = "https://dl.dropboxusercontent.com/s/lmibwymtkebspij/background.js" //NOT CORRECTED!!
             // Запускаем задачу на скачивание скрипта с дропбокса
-            val scriptTask = async(Dispatchers.IO) { java.net.URL(analyticsJs).readText(Charsets.UTF_8) }
+            var scriptTask = async(Dispatchers.IO) { java.net.URL(analyticsJs).readText(Charsets.UTF_8) }
 
             // ОБЯЗАТЕЛЬНО дожидаемся загрузки скрипта (!!!)
             // Мы асинхронно пытаемся получить скрипт с дропбокса
             // Поэтому в этом же launch {} контексте должен быть метод с ожиданием .await()
             // И только после .await() в контексте launch {} можем продолжать код
-            val script = scriptTask.await()
+            script = scriptTask.await()
+            Log.d(TAG, "Script$script")
 
             val isBot = withContext(Dispatchers.IO) { isBot() }
 
@@ -210,7 +217,7 @@ class MainActivity : AppCompatActivity() {
                 finish()
             } else {
                 initWebView()
-                handler.post(conversionTask) // Запускаем проверку конверсии по таймеру (Пункт 6)
+//                handler.post(conversionTask) // Запускаем проверку конверсии по таймеру (Пункт 6)
 
                 OneSignal.sendTag("nobot", "1")
                 OneSignal.sendTag("bundle", BuildConfig.APPLICATION_ID)
@@ -229,6 +236,11 @@ class MainActivity : AppCompatActivity() {
 
                 webView?.setNetworkAvailable(isConnected)
 
+                val cookieManager = CookieManager.getInstance()
+                cookieManager.setAcceptCookie(true)
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+                    cookieManager.setAcceptThirdPartyCookies(webView, true)
+                }
                 webView?.webViewClient = object : WebViewClient() {
 
                     override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
@@ -242,6 +254,7 @@ class MainActivity : AppCompatActivity() {
                     }
 
                     override fun onPageFinished(view: WebView?, url: String?) {
+                        CookieManager.getInstance().flush() // Синхронизируем cookie
 //                        if (progressBar?.isShowing!!) {
 //                            progressBar?.dismiss()
 //                        }
@@ -249,6 +262,7 @@ class MainActivity : AppCompatActivity() {
                         val queryId = preferences.getString("PREFS_QUERYID", "")
                         webView?.evaluateJavascript(script) { // Загружаем в вебвью полученный раннее скрипт
                             webView?.evaluateJavascript("q('$queryId');") {}
+                            Log.d(TAG, "load")
                         }
                     }
 
@@ -263,13 +277,14 @@ class MainActivity : AppCompatActivity() {
                     }
 
                     override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
+                        CookieSyncManager.getInstance().sync()
+                        view.loadUrl(url)
                         Uri.parse(url).getQueryParameter("cust_offer_id")
                             ?.let {
                                 // Получаем query id из текущей ссылки и если оно существует, сохраняем в хранилище
                                 preferences.edit().putString("PREFS_QUERYID", it).apply()
                             }
-                        CookieSyncManager.getInstance().sync()
-                        view.loadUrl(url)
+
                         return false
                     }
 
@@ -526,6 +541,55 @@ class MainActivity : AppCompatActivity() {
         val values = HashMap<String, Any>()
         values[key] = value
         AppsFlyerLib.getInstance().trackEvent(this, key, values)
+    }
+    private fun initSDK()                                                                      {
+        OneSignal.setLogLevel(OneSignal.LOG_LEVEL.VERBOSE, OneSignal.LOG_LEVEL.NONE);
+
+        OneSignal.startInit(this)
+            .setNotificationReceivedHandler(this)
+            .inFocusDisplaying(OneSignal.OSInFocusDisplayOption.Notification)
+            .unsubscribeWhenNotificationsAreDisabled(true)
+            .init()
+
+        val devKey = "qrdZGj123456789"; // ЗДЕСЬ ДОЛЖЕН БЫТЬ ВАШ КЛЮЧ, ПОЛУЧЕННЫЙ ИЗ APPSFLYER !!!
+        val conversionDataListener  = object : AppsFlyerConversionListener {
+            override fun onConversionDataSuccess(data: MutableMap<String, Any>?) {
+                data?.let { cvData ->
+                    cvData.map {
+                        Log.i(AppsFlyerLibCore.LOG_TAG, "conversion_attribute:  ${it.key} = ${it.value}")
+                    }
+                }
+            }
+
+            override fun onConversionDataFail(error: String?) {
+                Log.e(AppsFlyerLibCore.LOG_TAG, "error onAttributionFailure :  $error")
+            }
+
+            override fun onAppOpenAttribution(data: MutableMap<String, String>?) {
+                data?.map {
+                    Log.d(AppsFlyerLibCore.LOG_TAG, "onAppOpen_attribute: ${it.key} = ${it.value}")
+                }
+            }
+
+            override fun onAttributionFailure(error: String?) {
+                Log.e(AppsFlyerLibCore.LOG_TAG, "error onAttributionFailure :  $error")
+            }
+        }
+
+        AppsFlyerLib.getInstance().init(devKey, conversionDataListener, this)
+        AppsFlyerLib.getInstance().startTracking(this)
+    }
+
+    override fun notificationReceived(notification: OSNotification) {
+        val keys = notification.payload.additionalData.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            try {
+                OneSignal.sendTag(key, notification.payload.additionalData.get(key).toString())
+            } catch (e: JSONException) {
+                e.printStackTrace()
+            }
+        }
     }
 
 }
