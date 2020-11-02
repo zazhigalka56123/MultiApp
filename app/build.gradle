@@ -60,6 +60,7 @@ dependencies {
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.0.1'
     implementation 'com.appsflyer:af-android-sdk:5.4.0'
     implementation 'com.android.installreferrer:installreferrer:1.1'
+    implementation 'me.zhanghai.android.materialprogressbar:library:1.6.1'
 
     testImplementation 'junit:junit:4.12'
     androidTestImplementation 'androidx.test.ext:junit:1.1.2'
