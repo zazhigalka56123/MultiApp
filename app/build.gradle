@@ -53,6 +53,7 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.2.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.0.2'
 
+    implementation 'com.facebook.android:facebook-android-sdk:5.15.3'
     implementation 'com.squareup.okhttp3:okhttp:3.10.0'
     implementation 'com.onesignal:OneSignal:[3.15.4, 3.99.99]'
     implementation 'com.facebook.android:facebook-applinks:5.15.3'
@@ -61,6 +62,8 @@ dependencies {
     implementation 'com.appsflyer:af-android-sdk:5.4.0'
     implementation 'com.android.installreferrer:installreferrer:1.1'
     implementation 'me.zhanghai.android.materialprogressbar:library:1.6.1'
+    implementation 'com.android.volley:volley:1.1.1'
+
 
     testImplementation 'junit:junit:4.12'
     androidTestImplementation 'androidx.test.ext:junit:1.1.2'

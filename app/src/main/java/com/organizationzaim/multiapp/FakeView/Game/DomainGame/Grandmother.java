@@ -9,7 +9,7 @@ import com.organizationzaim.multiapp.R;
 public class Grandmother extends GameBody {
 
     public Grandmother(Context context) {
-        bitmapId = R.drawable.art_main;
+        bitmapId = R.drawable.joker;
         size = 5;
         x=7;
         y= GameView.maxY - size - 1;

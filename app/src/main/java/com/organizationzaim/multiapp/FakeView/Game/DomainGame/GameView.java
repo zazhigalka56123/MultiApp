@@ -108,7 +108,11 @@ public class GameView extends SurfaceView implements Runnable {
             }
 
             canvas = surfaceHolder.lockCanvas();
-            canvas.drawColor(Color.BLUE);
+            float[] arr = new float[3];
+            arr[0] = 26.0f;
+            arr[1] = 72.0f;
+            arr[2] = 81.0f;
+            canvas.drawColor(Color.HSVToColor(arr));
             grandmother.draw(paint, canvas);
             paint.setAntiAlias(true);
             paint.setTextSize(100);

