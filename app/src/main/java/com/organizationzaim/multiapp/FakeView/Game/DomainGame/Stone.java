@@ -10,7 +10,7 @@ public class Stone extends GameBody {
     private int radius = 1;
     private float minSpeed = (float) 0.1;
     private float maxSpeed = (float) 0.5;
-    private int[] Arr = {R.drawable.art_drop1, R.drawable.art_drop2, R.drawable.art_drop3, R.drawable.art_drop4, R.drawable.art_drop5};
+    private int[] Arr = {R.drawable.berry, R.drawable.seven, R.drawable.star, R.drawable.xxxx, R.drawable.vino};
     public Stone(Context context) {
         Random random = new Random();
         bitmapId = Arr[random.nextInt(Arr.length)];
