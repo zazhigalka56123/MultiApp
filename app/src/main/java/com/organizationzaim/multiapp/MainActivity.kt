@@ -178,14 +178,11 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler,
                 addToDeque(elem)
             }
         }
-        val deque: Deque<String> = LinkedList()
-        Log.d(TAG, deque.isNotEmpty().toString() + "(*-*)")
-        if (backDeque.isNotEmpty() && goNext) {
-
-            initWebView()
-            startWebView(backDeque.first)
-            backDeque.removeFirst()
-        } else {
+//        if (backDeque.isNotEmpty()) {
+//            initWebView()
+//            startWebView(backDeque.first)
+//            backDeque.removeFirst()
+//        } else {
             Log.d(TAG, "NOTHING")
             preferences = this.getSharedPreferences("MyPreferences", Context.MODE_PRIVATE)
 
@@ -198,7 +195,7 @@ class MainActivity : AppCompatActivity(), OneSignal.NotificationReceivedHandler,
                 // Иначе начинаем обработку диплинка
                 Log.d(TAG, "deeplink != null")
                 processDeeplinkAndStart(deeplink)
-            }
+//            }
         }
     }
     private fun isConnectedToNetwork(): Boolean                                                {

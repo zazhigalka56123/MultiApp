@@ -19,7 +19,7 @@ import java.util.ArrayList;
 
 public class GameView extends SurfaceView implements Runnable {
     public static int     maxX = 20;
-    public static int     maxY = 28;
+    public static int     maxY = 20;
     public static float   unitW = 0;
     public static float   unitH = 0;
 
@@ -42,7 +42,7 @@ public class GameView extends SurfaceView implements Runnable {
         super(gameActivity);
         this.gameActivity = gameActivity;
         maxX = 20;
-        maxY = 28;
+        maxY = 40;
         unitW = 0;
         unitH = 0;
         firstTime = true;
